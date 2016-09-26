@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <ctype.h>
 
-#define MAXLEN 256
+#define MAXLEN 10
 #define FIELDWIDTH 5
 
 #define ESC 27
@@ -18,9 +18,10 @@
 #define HOME_KEY 72
 #define END_KEY 70
 #define BACKSPACE 127
+#define DELETE 51
 #define SPACE 32
 
-#define defEditField(x)	/*must be put before all functions*/\
+#define defEditField(x)    /** must be put before all functions **/\
 typedef struct editField_t\
 {\
 	int stringSize;\
@@ -29,11 +30,11 @@ typedef struct editField_t\
 	int fieldPosition;\
 	int strLen;\
 	int isLastCh;\
-	char string[x];\
+	char string[x+1];\
 	\
 } editField;
 
-#define initEditField(edtFld, fWidth)\
+#define initEditField(edtFld, fWidth)	/** use to initialize an edit field struct **/\
 edtFld.fieldWidth = fWidth;\
 edtFld.stringSize = sizeof(edtFld.string);\
 edtFld.cursorPosition = 0;\
@@ -50,6 +51,7 @@ void specialCases(editField *editF);
 void cursorMoveLeft(editField *editF);
 void cursorMoveRight(editField *editF);
 int backspace(editField *editF);
+int del(editField *editF);
 int makeSpace(editField *editF);
 int catSpace(editField *editF);
 int addChar(editField *editF, char c);
@@ -61,32 +63,18 @@ void syncCursor(editField *editF);
 
 int getch(void)
 {
-	int c;   
-    static struct termios oldt;
-    static struct termios newt;
+	int c;
+	static struct termios oldt;
+	static struct termios newt;
 
-    /*tcgetattr gets the parameters of the current terminal
-    STDIN_FILENO will tell tcgetattr that it should write the settings
-    of stdin to oldt*/
-    tcgetattr( STDIN_FILENO, &oldt);
-    /*now the settings will be copied*/
-    newt = oldt;
+	tcgetattr( STDIN_FILENO, &oldt);
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr( STDIN_FILENO, TCSANOW, &newt);
+	c = getchar();
+	tcsetattr( STDIN_FILENO, TCSANOW, &oldt);
 
-    /*ICANON normally takes care that one line at a time will be processed
-    that means it will return if it sees a "\n" or an EOF or an EOL*/
-    newt.c_lflag &= ~(ICANON | ECHO);          
-
-    /*Those new settings will be set to STDIN
-    TCSANOW tells tcsetattr to change attributes immediately. */
-    tcsetattr( STDIN_FILENO, TCSANOW, &newt);
-
-    /*This is your part:*/
-    c = getchar();
-
-    /*restore the old settings*/
-    tcsetattr( STDIN_FILENO, TCSANOW, &oldt);
-
-    return c;
+	return c;
 }
 
 int addInput(editField *editF)
@@ -96,10 +84,12 @@ int addInput(editField *editF)
 	c = getch();
 	if(isalnum(c))
 	{
-		if(editF->strLen == editF->stringSize-2)
+		if(editF->strLen == editF->stringSize-1)
 			return 2;
 		if( addChar(editF, c) != 0)
 			return -1;
+		if(editF->strLen == editF->stringSize-1)
+			return 2;
 	}
 	else
 		switch(c)
@@ -119,7 +109,7 @@ int addInput(editField *editF)
 				printf("Dude you done fucked up. I no understando your lengua, amigo.\n");
 				return -1;
 		}
-	
+
 	return 0;
 }
 
@@ -128,12 +118,12 @@ void specialCases(editField *editF)
 	char c;
 	getch();
 	c = getch();
-	
+
 	switch(c)
 	{
 		case LEFT_ARROW:
 			cursorMoveLeft(editF);
-			break;	
+			break;
 		case RIGHT_ARROW:
 			cursorMoveRight(editF);
 			break;
@@ -141,6 +131,10 @@ void specialCases(editField *editF)
 			break;
 		case UP_ARROW:
 			break;
+		case DELETE:
+			del(editF);
+			c = getch();
+			return;
 		case HOME_KEY:
 			editF->isLastCh = editF->cursorPosition = editF->fieldPosition = 0;
 			break;
@@ -150,10 +144,11 @@ void specialCases(editField *editF)
 			break;
 		default:
 			renewPrintStr("That's a weird key dude. Press one I know pls.\n");
+			printf("%c\n", c);
 			getch();
 			renewPrintStr(editF->string);
 			break;
-	}	
+	}
 }
 
 void cursorMoveLeft(editField *editF)
@@ -164,28 +159,40 @@ void cursorMoveLeft(editField *editF)
 	editF->cursorPosition--;
 	if(editF->cursorPosition < editF->fieldPosition)
 		editF->fieldPosition = editF->cursorPosition;
-	//printf("\033[1D");	not implemented this way because of renewPrintStr()
 }
 
 void cursorMoveRight(editField *editF)
 {
 	if(editF->cursorPosition >= editF->strLen )
 		return;
-	
+
 	editF->cursorPosition++;
 	if(editF->cursorPosition == editF->strLen)
 		editF->isLastCh = 1;
-	if(editF->cursorPosition - editF->fieldPosition > editF->fieldWidth)
-		editF->fieldPosition = editF->cursorPosition - editF->fieldWidth;
-	//printf("\033[1C");	not implemented this way because of renewPrintStr()
+	if(editF->cursorPosition - editF->fieldPosition >= editF->fieldWidth)
+	{
+		if(editF->isLastCh)
+			editF->fieldPosition = editF->cursorPosition - editF->fieldWidth;
+		else
+			editF->fieldPosition++;
+	}
 }
 
 int backspace(editField *editF)
 {
 	if(editF->cursorPosition == 0)
 		return 0;
-		
+
 	cursorMoveLeft(editF);
+	editF->string[editF->cursorPosition] = 0;
+	return catSpace(editF);
+}
+
+int del(editField *editF)
+{
+	if(editF->isLastCh)
+		return 0;
+
 	editF->string[editF->cursorPosition] = 0;
 	return catSpace(editF);
 }
@@ -199,21 +206,29 @@ int makeSpace(editField *editF)
 	{
 		editF->string[i+1] = editF->string[i];
 	}
-	
+
 	return 0;
 }
 
 int catSpace(editField *editF)
 {
-	int i = editF->cursorPosition;
-	
+	int i;
+
 	for(i = editF->cursorPosition; i <= editF->strLen; i++)
 	{
 		editF->string[i] = editF->string[i+1];
 	}
 	editF->string[i] = 0;
 	editF->strLen--;
-	
+	///if(editF->cursorPosition == editF->strLen && editF->fieldPosition)
+	if(editF->strLen - editF->fieldPosition < editF->fieldWidth && editF->fieldPosition)
+	{
+		///editF->cursorPosition--;
+		editF->fieldPosition--;
+	}
+	if(editF->cursorPosition == editF->strLen)
+		editF->isLastCh = 1;
+
 	return 0;
 }
 
@@ -231,18 +246,23 @@ int addChar(editField *editF, char c)
 			return res;
 		editF->string[editF->cursorPosition] = c;
 	}
-	
+
 	editF->strLen++;
 	cursorMoveRight(editF);
-	
-	return 0;
-}
 
-void maxLenReached(editField *editF) /******************TO BE REWORKED**************/
+	return 0;
+	}
+
+void maxLenReached(editField *editF)
 {
+	int i;
 	editF->string[editF->stringSize-1] = 0;
 	printf("\33[2K\r");
-	printf("Maximum length reached.\n");
+	renewPrintField(editF);
+	printf(" - Maximum length reached!");
+	for(i = 1; i < sizeof " - Maximum length reached!"; i++)
+		printf("\033[1D");
+	syncCursor(editF);
 }
 
 void renewPrintStr(char string[])
@@ -253,39 +273,52 @@ void renewPrintStr(char string[])
 
 void renewPrintField(editField *editF)
 {
-	int i = editF->fieldPosition;
+	int i;
+
 	printf("\33[2K\r");
-	for( i = editF->fieldPosition; i <= editF->fieldWidth + editF->fieldPosition; i++)
-		putchar(editF->string[i]);
+	if(editF->cursorPosition - editF->fieldPosition == editF->fieldWidth && !editF->isLastCh)
+		for( i = editF->fieldPosition + 1; i <= editF->fieldWidth + editF->fieldPosition; i++)
+			putchar(editF->string[i]);
+	else
+		for( i = editF->fieldPosition; i < editF->fieldWidth + editF->fieldPosition; i++)
+			putchar(editF->string[i]);
 }
 
 void syncCursor(editField *editF)
 {
-	int i = editF->fieldPosition + editF->fieldWidth;
-	
-	if(editF->strLen > editF->fieldWidth)
-		for(i = editF->fieldPosition + editF->fieldWidth; i >= editF->cursorPosition; i--)
+	int i;
+
+	if(editF->strLen >= editF->fieldWidth)
+	{
+		for(i = editF->fieldPosition + editF->fieldWidth; i > editF->cursorPosition; i--)
 			printf("\033[1D");
+	}
 	else
+	{
 		for(i = editF->strLen; i > editF->cursorPosition; i--)
 			printf("\033[1D");
+	}
 }
 
 int main()
 {
-	editField editF;
-	initEditField(editF, FIELDWIDTH);
-	int res = 0;
-	
-	memset(editF.string, 0, editF.stringSize);
-	while(1)
-	{
-		if((res = addInput(&editF)) != 0)
-			break;
-		
-		printf("\nc = %d; f = %d\n", editF.cursorPosition, editF.fieldPosition);
-		renewPrintField(&editF);
-		syncCursor(&editF);
+    editField editF;
+    initEditField(editF, FIELDWIDTH);
+    int res = 0;
+
+    memset(editF.string, 0, editF.stringSize);
+    while(1)
+    {
+		res = addInput(&editF);
+        if(res != 0 && res != 2)
+            break;
+		if(res == 2)
+			maxLenReached(&editF);
+		else//printf("\nc = %d; f = %d; l = %d;\n", editF.cursorPosition, editF.fieldPosition, editF.strLen);
+		{
+			renewPrintField(&editF);
+			syncCursor(&editF);
+		}
 	}
 	switch(res)
 	{
@@ -293,43 +326,13 @@ int main()
 			printf("\nInput:\n%s\n", editF.string);
 			break;
 		case 2:
-			maxLenReached(&editF);
 			break;
-		case -1:
+		default:
 			perror("error");
 			exit(-1);
-		
 	}
-	
-	
-	
-	return 0;
+
+
+
+    return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
-*
-*
-		* Adding characters in the middle of the string works properly (actually adds them instead of changing the current one)
-		* Added more special cases
-		* Combined all variables into a struct and added two macros for managing it. This makes portability a real possibility.
-		*
-*
-*
-*
-**/
-
-
-
-
