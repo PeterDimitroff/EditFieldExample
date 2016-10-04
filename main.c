@@ -21,32 +21,22 @@
 #define DELETE 51
 #define SPACE 32
 
-#define defEditField(x)    /** must be put before all functions **/\
-typedef struct editField_t\
-{\
-	int stringSize;\
-	int fieldWidth;\
-	int cursorPosition;\
-	int fieldPosition;\
-	int strLen;\
-	int isLastCh;\
-	char string[x+1];\
-	\
-} editField;
+typedef struct editField_t
+{
+	int stringSize;
+	int fieldWidth;
+	int cursorPosition;
+	int fieldPosition;
+	int strLen;
+	int isLastCh;
+	char *string;
 
-#define initEditField(edtFld, fWidth)	/** use to initialize an edit field struct **/\
-edtFld.fieldWidth = fWidth;\
-edtFld.stringSize = sizeof(edtFld.string);\
-edtFld.cursorPosition = 0;\
-edtFld.fieldPosition = 0;\
-edtFld.strLen = 0;\
-edtFld.isLastCh = 1;
+}editField;
 
-defEditField(MAXLEN);
-
+int initEditField(editField *edtFld, int strSize, int fWidth);
+int destroyEditField(editField *edtFld);
 int getch();
 int addInput(editField *editF);
-
 void specialCases(editField *editF);
 void cursorMoveLeft(editField *editF);
 void cursorMoveRight(editField *editF);
@@ -60,6 +50,28 @@ void maxLenReached(editField *editF);
 void renewPrintStr(char string[]);
 void renewPrintField(editField *editF);
 void syncCursor(editField *editF);
+
+int initEditField(editField *edtFld, int strSize, int fWidth)
+{
+	edtFld->fieldWidth = fWidth;
+	edtFld->stringSize = strSize;
+	edtFld->cursorPosition = 0;
+	edtFld->fieldPosition = 0;
+	edtFld->strLen = 0;
+	edtFld->isLastCh = 1;
+	if(NULL == (edtFld->string = malloc(strSize)) )
+	{
+		return -1;
+	}
+
+	return 0;
+}
+
+int destroyEditField(editField *edtFld)
+{
+	free(edtFld->string);
+	return 0;
+}
 
 int getch(void)
 {
@@ -220,10 +232,8 @@ int catSpace(editField *editF)
 	}
 	editF->string[i] = 0;
 	editF->strLen--;
-	///if(editF->cursorPosition == editF->strLen && editF->fieldPosition)
 	if(editF->strLen - editF->fieldPosition < editF->fieldWidth && editF->fieldPosition)
 	{
-		///editF->cursorPosition--;
 		editF->fieldPosition--;
 	}
 	if(editF->cursorPosition == editF->strLen)
@@ -303,8 +313,19 @@ void syncCursor(editField *editF)
 int main()
 {
     editField editF;
-    initEditField(editF, FIELDWIDTH);
-    int res = 0;
+    int res;
+    int i;
+    for(i = 0; i < 10; i++)
+    {
+		res = initEditField(&editF, MAXLEN, FIELDWIDTH);
+		if(res == 0)
+			break;
+	}
+	if(res != 0)
+	{
+		printf("Error - not enough memory.\n");
+		exit(res);
+	}
 
     memset(editF.string, 0, editF.stringSize);
     while(1)
@@ -314,7 +335,7 @@ int main()
             break;
 		if(res == 2)
 			maxLenReached(&editF);
-		else//printf("\nc = %d; f = %d; l = %d;\n", editF.cursorPosition, editF.fieldPosition, editF.strLen);
+		else
 		{
 			renewPrintField(&editF);
 			syncCursor(&editF);
@@ -329,10 +350,11 @@ int main()
 			break;
 		default:
 			perror("error");
+			destroyEditField(&editF);
 			exit(-1);
 	}
 
-
+	destroyEditField(&editF);
 
     return 0;
 }
