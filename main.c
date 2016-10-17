@@ -21,6 +21,8 @@
 #define DELETE 51
 #define SPACE 32
 
+#define EDITF_MAXLEN 2
+
 typedef struct editField_t
 {
 	int stringSize;
@@ -37,7 +39,7 @@ int initEditField(editField *edtFld, int strSize, int fWidth);
 int destroyEditField(editField *edtFld);
 int getch();
 int addInput(editField *editF);
-void specialCases(editField *editF);
+/*void specialCases(editField *editF); now inside addInput()*/
 void cursorMoveLeft(editField *editF);
 void cursorMoveRight(editField *editF);
 int backspace(editField *editF);
@@ -97,11 +99,11 @@ int addInput(editField *editF)
 	if(isalnum(c))
 	{
 		if(editF->strLen == editF->stringSize-1)
-			return 2;
+			return EDITF_MAXLEN;
 		if( addChar(editF, c) != 0)
 			return -1;
 		if(editF->strLen == editF->stringSize-1)
-			return 2;
+			return EDITF_MAXLEN;
 	}
 	else
 		switch(c)
@@ -109,8 +111,40 @@ int addInput(editField *editF)
 			case SPACE:
 				break;
 			case ESC:
-				specialCases(editF);
+				/*specialCases(editF);*/
+				getch();
+				c = getch();
+				switch(c)
+				{
+					case LEFT_ARROW:
+						cursorMoveLeft(editF);
+						break;
+					case RIGHT_ARROW:
+						cursorMoveRight(editF);
+						break;
+					case DOWN_ARROW:
+						break;
+					case UP_ARROW:
+						break;
+					case DELETE:
+						del(editF);
+						c = getch();
+						break;
+					case HOME_KEY:
+						editF->isLastCh = editF->cursorPosition = editF->fieldPosition = 0;
+						break;
+					case END_KEY:
+						while(editF->cursorPosition < editF->strLen)
+							cursorMoveRight(editF);
+						break;
+					default:
+						renewPrintStr("Unknown key signal found. - ");
+						printf("%d\n", c);
+						getch();
+						break;
+				}
 				break;
+
 			case BACKSPACE:
 				backspace(editF);
 				break;
@@ -118,13 +152,13 @@ int addInput(editField *editF)
 				editF->string[editF->strLen] = 0;
 				return 1;
 			default:
-				printf("Dude you done fucked up. I no understando your lengua, amigo.\n");
+				printf("Unknown key entered.\n");
 				return -1;
 		}
 
 	return 0;
 }
-
+/*
 void specialCases(editField *editF)
 {
 	char c;
@@ -155,14 +189,14 @@ void specialCases(editField *editF)
 				cursorMoveRight(editF);
 			break;
 		default:
-			renewPrintStr("That's a weird key dude. Press one I know pls.\n");
+			renewPrintStr("Unknown key signal found. - ");
 			printf("%c\n", c);
 			getch();
 			renewPrintStr(editF->string);
 			break;
 	}
 }
-
+*/
 void cursorMoveLeft(editField *editF)
 {
 	if(editF->cursorPosition == 0)
@@ -213,7 +247,7 @@ int makeSpace(editField *editF)
 {
 	int i = 0;
 	if(editF->strLen >= editF->stringSize)
-		return 1;
+		return EDITF_MAXLEN;
 	for(i = editF->strLen; i >= editF->cursorPosition; i--)
 	{
 		editF->string[i+1] = editF->string[i];
@@ -331,7 +365,7 @@ int main()
     while(1)
     {
 		res = addInput(&editF);
-        if(res != 0 && res != 2)
+        if(res != 0 && res != EDITF_MAXLEN)
             break;
 		if(res == 2)
 			maxLenReached(&editF);
